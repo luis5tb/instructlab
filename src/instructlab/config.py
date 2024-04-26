@@ -27,6 +27,8 @@ DEFAULT_CONNECTION_TIMEOUT = httpx.Timeout(timeout=30.0)
 # use spawn start method, fork is not thread-safe
 DEFAULT_MULTIPROCESSING_START_METHOD = "spawn"
 
+DEFAULT_MODEL_SERVER = "llamacpp"
+
 
 class ConfigException(Exception):
     """An exception that a configuration file has an error."""
@@ -93,6 +95,7 @@ class _serve(BaseModel):
     host_port: Optional[StrictStr] = "127.0.0.1:8000"
     gpu_layers: Optional[int] = -1
     max_ctx_size: Optional[PositiveInt] = 4096
+    model_server: Optional[StrictStr] = "llamacpp"
 
     def api_base(self):
         """Returns server API URL, based on the configured host and port"""

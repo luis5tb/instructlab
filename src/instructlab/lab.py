@@ -292,15 +292,22 @@ utils.make_lab_diff_aliases(cli, diff)
     type=click.INT,
     help="The context size is the maximum number of tokens considered by the model, for both the prompt and response. Defaults to 4096.",
 )
+@click.option(
+    "--model-server",
+    type=click.STRING,
+    default=config.DEFAULT_MODEL_SERVER,
+    show_default=True,
+    help="The inference model server to be used. Defaults to llamacpp.",
+)
 @click.pass_context
-def serve(ctx, model_path, gpu_layers, num_threads, max_ctx_size):
+def serve(ctx, model_path, gpu_layers, num_threads, max_ctx_size, model_server):
     """Start a local server"""
     # pylint: disable=C0415
     # Local
     from .server import ServerException, server
 
     ctx.obj.logger.info(
-        f"Using model '{model_path}' with {gpu_layers} gpu-layers and {max_ctx_size} max context size."
+        f"Using model '{model_path}' with {gpu_layers} gpu-layers and {max_ctx_size} max context size. Model server is '{model_server}'."
     )
 
     try:
@@ -314,6 +321,7 @@ def serve(ctx, model_path, gpu_layers, num_threads, max_ctx_size):
             num_threads,
             host,
             port,
+            model_server,
         )
     except ServerException as exc:
         click.secho(f"Error creating server: {exc}", fg="red")

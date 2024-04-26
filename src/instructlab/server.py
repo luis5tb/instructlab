@@ -17,6 +17,12 @@ from llama_cpp.server.settings import Settings
 from uvicorn import Config
 import llama_cpp.server.app as llama_app
 import uvicorn
+# import fastapi
+# from fastapi.middleware.cors import CORSMiddleware
+
+from deepsparse.server.config import ServerConfig
+from deepsparse.server.config import EndpointConfig
+from deepsparse.server.openai_server import OpenAIServer
 
 # Local
 from .client import ClientException, list_models
@@ -44,8 +50,8 @@ def ensure_server(
     tls_client_key,
     tls_client_passwd,
 ):
-    """Checks if server is running, if not starts one as a subprocess. Returns the server process
-    and the URL where it's available."""
+    """Checks if server is running, if not starts one as a subprocess.
+    Returns the server process and the URL where it's available."""
     try:
         api_base = serve_config.api_base()
         logger.debug(f"Trying to connect to {api_base}...")
@@ -61,7 +67,8 @@ def ensure_server(
         tried_ports = set()
         # TODO: use default server, "spawn" doesn't work?
         mpctx = multiprocessing.get_context(None)
-        # use a queue to communicate between the main process and the server process
+        # use a queue to communicate between the main process and the server
+        # process
         queue = mpctx.Queue()
         port = random.randint(1024, 65535)
         host = serve_config.host_port.rsplit(":", 1)[0]
@@ -105,6 +112,7 @@ def ensure_server(
                 "port": port,
                 "host": host,
                 "queue": queue,
+                "model_server": serve_config.model_server,
             },
             daemon=True,
         )
@@ -126,7 +134,7 @@ def ensure_server(
         return (server_process, temp_api_base)
 
 
-def server(
+def start_llama_server(
     logger,
     model_path,
     gpu_layers,
@@ -136,7 +144,6 @@ def server(
     port=8000,
     queue=None,
 ):
-    """Start OpenAI-compatible server"""
     settings = Settings(
         host=host,
         port=port,
@@ -197,6 +204,55 @@ def server(
             s.run()
     else:
         s.run()
+
+
+def start_deepsparse_server(
+    logger,
+    model_path,
+    gpu_layers,
+    max_ctx_size,
+    threads=None,
+    host="localhost",
+    port=8000,
+    queue=None,
+):
+    server_config = ServerConfig(
+        integration="openai",
+        endpoints=[EndpointConfig(model=model_path)],
+    )
+    try:
+        server = OpenAIServer(server_config=server_config)
+        server.start_server()
+    except Exception as exc:
+        if queue:
+            queue.put(exc)
+            return
+        raise ServerException(f"failed creating the server application: {exc}") from exc
+
+    logger.info("Starting server process, press CTRL+C to shutdown server...")
+    logger.info(
+        f"After application startup complete see http://{host}:{port}/docs for API."
+    )
+
+
+def server(
+    logger,
+    model_path,
+    gpu_layers,
+    max_ctx_size,
+    threads=None,
+    host="localhost",
+    port=8000,
+    queue=None,
+    model_server="llamacpp",
+):
+    """Start OpenAI-compatible server"""
+    if model_server == "llamacpp":
+        start_llama_server(logger, model_path, gpu_layers, max_ctx_size,
+                           threads, host, port, queue)
+    elif model_server == "deepsparse":
+        start_deepsparse_server(logger, model_path, gpu_layers, max_ctx_size,
+                                threads, host, port, queue)
 
 
 def can_bind_to_port(host, port):
