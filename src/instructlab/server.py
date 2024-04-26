@@ -9,6 +9,7 @@ import os
 import random
 import signal
 import socket
+import subprocess
 
 # Third Party
 from llama_cpp import llama_chat_format
@@ -44,8 +45,8 @@ def ensure_server(
     tls_client_key,
     tls_client_passwd,
 ):
-    """Checks if server is running, if not starts one as a subprocess. Returns the server process
-    and the URL where it's available."""
+    """Checks if server is running, if not starts one as a subprocess.
+    Returns the server process and the URL where it's available."""
     try:
         api_base = serve_config.api_base()
         logger.debug(f"Trying to connect to {api_base}...")
@@ -61,7 +62,8 @@ def ensure_server(
         tried_ports = set()
         # TODO: use default server, "spawn" doesn't work?
         mpctx = multiprocessing.get_context(None)
-        # use a queue to communicate between the main process and the server process
+        # use a queue to communicate between the main process and the server
+        # process
         queue = mpctx.Queue()
         port = random.randint(1024, 65535)
         host = serve_config.host_port.rsplit(":", 1)[0]
@@ -105,6 +107,7 @@ def ensure_server(
                 "port": port,
                 "host": host,
                 "queue": queue,
+                "model_server": serve_config.model_server,
             },
             daemon=True,
         )
@@ -126,7 +129,7 @@ def ensure_server(
         return (server_process, temp_api_base)
 
 
-def server(
+def start_llama_server(
     logger,
     model_path,
     gpu_layers,
@@ -136,7 +139,6 @@ def server(
     port=8000,
     queue=None,
 ):
-    """Start OpenAI-compatible server"""
     settings = Settings(
         host=host,
         port=port,
@@ -197,6 +199,49 @@ def server(
             s.run()
     else:
         s.run()
+
+
+def start_vllm_server(
+    logger,
+    model_path,
+    host="localhost",
+    port=8000,
+    queue=None,
+):
+    command = f"python -m vllm.entrypoints.openai.api_server --host {host} --model {model_path} --port {port}"
+    try:
+        os.system(command)
+    except Exception as exc:
+        if queue:
+            queue.put(exc)
+            return
+        raise ServerException(f"failed creating the server application: {exc}") from exc
+
+    logger.info("Starting server process, press CTRL+C to shutdown server...")
+    logger.info(
+        f"After application startup complete see http://{host}:{port}/docs for API."
+    )
+
+
+def server(
+    logger,
+    model_path,
+    gpu_layers,
+    max_ctx_size,
+    threads=None,
+    host="localhost",
+    port=8000,
+    queue=None,
+    model_server="llamacpp",
+):
+    """Start OpenAI-compatible server"""
+    if model_server == "llamacpp":
+        start_llama_server(logger, model_path, gpu_layers, max_ctx_size,
+                           threads, host, port, queue)
+    elif model_server == "vllm":
+        start_vllm_server(logger, model_path, host, port,queue)
+    else:
+        logger.info("Unsupported Model Server.")
 
 
 def can_bind_to_port(host, port):
